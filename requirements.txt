@@ -1,0 +1,20 @@
+# AutoAttend - Python 3.10, CPU only
+opencv-python==4.10.0.84
+mediapipe==0.10.14
+numpy==1.26.4
+pandas==2.2.2
+plotly==5.24.1
+streamlit==1.39.0
+openpyxl==3.1.5
+cryptography==43.0.1
+pyarrow==17.0.0
+
+
+# Face embeddings: DeepFace + Facenet is the default (installs cleanly on Windows)
+deepface==0.0.93
+tensorflow-cpu==2.16.1
+tf-keras==2.16.0
+
+# OPTIONAL: face_recognition is tried first if installed, but it needs dlib (hard on Windows).
+# If it is missing or fails, the engine automatically falls back to DeepFace.
+# face-recognition==1.3.0
