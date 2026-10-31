@@ -1,82 +1,144 @@
-# AutoAttend - Vision Agent for Zero-Touch Attendance
+# AutoAttend: Zero-Touch Attendance Agent
 
-Built for **Analytica 4.0, RV University**.
+An AI agent that takes attendance automatically from a classroom camera, blocks proxy attendance, and warns faculty about students who are slipping, so teachers get their class time back.
 
-## Problem
-Faculty lose 5-10 minutes of every class to manual roll calls. Proxy attendance is common and there is no early warning for students drifting away.
+Built for **Analytica 4.0 (CampusAI: Agents for Academia)**, School of Economics and Business, RV University.
+Focus area: **Teaching & Faculty Productivity Agents**.
 
-## Solution
-AutoAttend turns any laptop webcam or existing CCTV feed into a **zero-touch attendance agent**:
+---
 
-- Detects and recognises every face in the room (MediaPipe + face embeddings, CPU only).
-- Marks **PRESENT** after 3 s of continuous presence, **LATE** after 15 min, never twice per session.
-- Blocks **proxy**: a photo held up to the camera never blinks, so it is not counted. Unknown faces are snapshotted to `reports/suspicious/`.
-- The **agent layer** flags defaulters (<75%), students **AT RISK** (3 absent days), suggests actions (e.g. "Attendance low (40%) on Fridays - suggest rescheduling?") and builds a weekly report every Monday.
+## The problem
 
-## Architecture
+Manual roll call takes about 5 minutes per class. Across a day of classes and a whole year, that adds up to many hours of teaching time lost per teacher. Manual attendance also allows proxy marking, and nobody notices a student who is drifting away until it is too late.
+
+## The solution
+
+AutoAttend turns a laptop webcam (or an existing CCTV feed) into an attendance agent that **senses, decides and acts**:
+
+| Step | What the agent does |
+|------|---------------------|
+| **Senses** | Detects every face in the room and recognises enrolled students |
+| **Decides** | Marks PRESENT after 3 seconds of continuous presence, LATE after 15 minutes, never twice in one session |
+| **Acts** | Blocks proxy (photos never blink), saves snapshots of unknown faces, flags defaulters and at-risk students, suggests actions, builds weekly reports |
+
+### Features
+- **Face detection** with Google MediaPipe (CPU only, no GPU, no dlib).
+- **Face recognition** with `face_recognition` if it is installed, with an **automatic fallback to DeepFace (Facenet)** if it is missing or fails.
+- **Anti-proxy blink check**: a face must blink before it is counted, so a printed photo or a photo on a phone screen is not accepted.
+- **Unknown-face snapshots** saved for faculty review.
+- **Defaulter report**: students below 75% attendance, with a "Send Alert" button (demo: prints a message, no real email).
+- **At-risk flag**: students absent 3 class days in a row.
+- **Smart suggestions**, for example: "Class attendance low (40%) on Fridays - suggest rescheduling?"
+- **Weekly report** (Excel), generated automatically on Mondays or with a button.
+- **Demo mode**: no webcam? Upload a classroom photo or video instead.
+
+---
+
+## How it works
+
 ```
  Webcam / CCTV / demo video
-          |
-          v
- +---------------------+   MediaPipe Face Detection
- |   face_engine.py    |-> Embedding: face_recognition  --(fails?)--> DeepFace Facenet
- |                     |-> Similarity >= 0.55 => Known / else Unknown
- |                     |-> MediaPipe Face Mesh -> blink (EAR) liveness
- +----------+----------+
-            | [{roll_no, name, bbox, confidence, status, live}]
+            |
             v
- +---------------------+   3 s rule, LATE rule, no duplicates
- | attendance_agent.py |-> proxy snapshots -> reports/suspicious/
- |   (the "agent")     |-> CSV: reports/attendance_2024.csv
- |                     |-> defaulters, AT RISK, suggestions, weekly report
- +----------+----------+
-            v
- +---------------------+
- |   app.py Streamlit  |  Enroll | Live Class | AI Agent Insights | Reports
- +---------------------+
+ +----------------------------+
+ |       face_engine.py       |
+ |  MediaPipe  -> find faces  |
+ |  Embedding  -> face_recognition, or DeepFace (Facenet) as fallback
+ |  Matching   -> similarity >= 0.55 = Known, else Unknown
+ |  Liveness   -> MediaPipe Face Mesh, blink (eye aspect ratio)
+ +--------------+-------------+
+                |  who is in front of the camera, and are they live?
+                v
+ +----------------------------+
+ |    attendance_agent.py     |
+ |  3-second rule, LATE rule, no duplicates
+ |  unknown faces -> reports/suspicious/
+ |  defaulters, at-risk, suggestions, weekly report
+ +--------------+-------------+
+                v
+ +----------------------------+
+ |  app.py  (Streamlit)       |
+ |  Enroll | Live Class | AI Agent Insights | Reports
+ +----------------------------+
 ```
 
-## Folder structure
-```
-AutoAttend/
-  dataset/RollNo_Name/        3 enrollment photos per student
-  embeddings/face_encodings.pkl   encrypted averaged embeddings
-  reports/attendance_2024.csv     attendance history
-  reports/suspicious/             proxy / unknown-face snapshots
-  face_engine.py  attendance_agent.py  app.py  requirements.txt  README.md
-```
+---
 
-## How to Run
+## Run it
+
+**Requirements:** Windows, macOS or Linux, **Python 3.12** (3.10 or 3.11 also work; **3.13 and newer do not**, because TensorFlow and MediaPipe do not support them yet), and a webcam (optional, see Demo mode).
+
 ```bash
-python -m venv venv && venv\Scripts\activate      # Windows  (source venv/bin/activate on Mac/Linux)
+# 1. Create a virtual environment
+py -3.12 -m venv venv           # Windows
+# python3.12 -m venv venv       # macOS / Linux
+
+# 2. Activate it
+venv\Scripts\activate           # Windows
+# source venv/bin/activate      # macOS / Linux
+
+# 3. Install (about 1 GB download, mostly TensorFlow)
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+pip install pyarrow==17.0.0     # keeps Streamlit tables working with NumPy 1.26
+
+# 4. Start the app
 streamlit run app.py
 ```
 
-1. **Enroll Students**: roll no, name, class, 3 photos, consent tick.
-2. **Live Class**: choose class + subject, **Start Class**. Blink once at the camera so liveness passes; after 3 s you appear in the live table.
-3. **AI Agent Insights**: charts, defaulters, at-risk, suggestions, Excel export. Click **Load demo history** for instant sample data.
+The app opens at `http://localhost:8501`. The first time faces are recognised, DeepFace downloads the Facenet model (about 90 MB), so keep the internet on for that first run.
 
-### Demo mode (stage backup)
-No webcam or bad lighting? Tick **Demo mode** on the Live Class page, press Start Class, upload a classroom group photo or `classroom_sample.mp4`, then **Process demo file**. Enroll the people in the photo first so they can be recognised.
+### Using the dashboard
 
-### Face backend
-`face_recognition` is tried first (if installed). If it is missing or throws, the engine **falls back to DeepFace + Facenet** automatically. Force it with `FACE_BACKEND=deepface`. dlib is **not** needed: MediaPipe does all detection. Embeddings from different backends are not compatible, so re-enroll if the backend changes (the app tells you).
+1. **Enroll Students**: enter roll number, name and class, upload 3 clear front-facing photos, tick the consent box, click Enroll.
+2. **Live Class**: choose a class and subject, click **Start Class**. Blink once at the camera and stay in view for about 3 seconds to be marked. Click **End Class & Save Report** to finish; anyone not seen is saved as ABSENT.
+3. **AI Agent Insights**: charts, defaulters, at-risk students, suggestions and an Excel download. Click **Load demo history** for sample data.
+4. **Reports**: filter by date and class, download as CSV.
 
-## Privacy & Ethics
-- **Consent-based**: enrollment requires an explicit consent tick per student.
-- **Data minimisation**: only an averaged numeric embedding is used for matching; raw photos stay in `dataset/` and can be removed.
-- **Local only**: nothing leaves the machine. Embeddings are **encrypted at rest** (Fernet) with a key stored locally in `embeddings/secret.key`.
-- **Retention**: `face_engine.purge_all_data()` deletes all embeddings, keys and photos. Run it at the end of the semester (can be scheduled).
-- **Designed in line with GDPR principles** (consent, purpose limitation, minimisation, right to erasure) and India's DPDP Act 2023. This is a design intent, not a legal certification; a real deployment needs an institutional policy review.
-- **Human in the loop**: the agent flags and suggests; faculty decide.
+### Demo mode (backup if the webcam fails)
 
-## Limitations (be upfront with judges)
-- Blink liveness stops printed photos and simple screen replays, not 3D masks or video replays of a blinking face.
-- Recognition accuracy depends on lighting, camera angle and distance from the camera.
+Tick **Demo mode** on the Live Class page, click Start Class, upload a classroom group photo or a short video, then click **Process demo file**. Enroll the people in the photo first, otherwise they will show as Unknown.
 
-## Future Scope
-Multi-camera CCTV support, LMS/ERP integration, real email/SMS alerts, anti-spoofing models (depth/texture), mobile app for students, per-subject analytics.
+---
+
+## Privacy and ethics
+
+- **Consent first:** a student cannot be enrolled without an explicit consent tick.
+- **Stays on your machine:** nothing is sent to any server. Face data is stored locally.
+- **Encrypted at rest:** the face embeddings (numbers, not photos) are encrypted with a local key.
+- **Delete when done:** a purge function removes all embeddings, keys and photos; run it at the end of the semester.
+- **Humans decide:** the agent flags and suggests, and faculty take the action.
+- **Not in this repository:** face data, photos, attendance records and snapshots are excluded with `.gitignore` and are never uploaded.
+- This project follows privacy principles such as consent, data minimisation and the right to erasure. It is **not** a legal compliance certification; a real deployment needs a review under the institution's policy and India's DPDP Act 2023.
+
+## Limitations (honest ones)
+
+- The blink check stops photos and simple screen replays, **not** a video of someone blinking or a 3D mask.
+- Accuracy depends on lighting, camera angle and distance. A laptop webcam sees a few people close up; a whole classroom needs a better or wider camera.
+- Alerts are a demo: they print or log a message and do not send real email or SMS yet.
+- Tested with a small number of people, not a full class.
+
+## Future scope
+
+- Student Success Agent: combine attendance with marks to score each student's risk and draft personal follow-ups for faculty approval.
+- Real email/SMS alerts, and links to the college ERP/LMS.
+- Multi-camera support for large classrooms using existing CCTV.
+- Stronger anti-spoofing (texture or depth based).
+- Per-subject analytics and a student-facing view.
+
+## Project files
+
+```
+face_engine.py         detection, recognition, liveness, encrypted storage
+attendance_agent.py    attendance rules, analytics, alerts, reports
+app.py                 Streamlit dashboard (4 pages)
+requirements.txt       pinned dependencies
+dataset/               enrollment photos          (created at runtime, not in Git)
+embeddings/            encrypted face data        (created at runtime, not in Git)
+reports/               attendance CSV, snapshots  (created at runtime, not in Git)
+```
 
 ## Team
-Your Name
+
+**Darshan**, MCA student
+GitHub: [dj88-alt](https://github.com/dj88-alt)
